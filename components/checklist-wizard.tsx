@@ -1,0 +1,660 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { SiteHeader } from "./site-header";
+import { WeekStrip } from "./week-strip";
+import { VIEWS, ZONES, type ViewId, type ZoneId } from "@/lib/zones";
+import { addDays, format, isFriday, isWeekday, mondayOf, toISODate } from "@/lib/dates";
+import { compressPhoto, formatBytes } from "@/lib/photos";
+import { loadEmailedDays, saveDay, sentDates } from "@/lib/week-store";
+import type { Incident } from "@/lib/schema";
+
+type Step = "form" | "photos" | "success";
+type ZoneState = Record<ZoneId, { status: "pass" | "attention"; note: string }>;
+type Photo = { fileName: string; sizeBytes: number; blob: Blob; previewUrl: string };
+type SendMode = "smtp" | "mock" | null;
+
+const IDENTITY_KEY = "fleetcheck:last-identity";
+
+function freshZones(): ZoneState {
+  return Object.fromEntries(ZONES.map((z) => [z.id, { status: "pass", note: "" }])) as ZoneState;
+}
+
+/** Default to today; on a weekend fall back to that week's Friday. */
+function defaultDay(today: string): string {
+  if (isWeekday(today)) return today;
+  return addDays(mondayOf(today), 4);
+}
+
+function loadIdentity(): { driver: string; vehicle: string } {
+  try {
+    const raw = window.localStorage.getItem(IDENTITY_KEY);
+    if (raw) {
+      const v = JSON.parse(raw);
+      return { driver: String(v.driver ?? ""), vehicle: String(v.vehicle ?? "") };
+    }
+  } catch {
+    // storage unavailable
+  }
+  return { driver: "", vehicle: "" };
+}
+
+function saveIdentity(driver: string, vehicle: string) {
+  try {
+    window.localStorage.setItem(IDENTITY_KEY, JSON.stringify({ driver, vehicle }));
+  } catch {
+    // storage unavailable
+  }
+}
+
+function joinList(items: string[]) {
+  return items.length === 1 ? items[0] : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+export function ChecklistWizard() {
+  // "Today" is resolved on the device after mount so a prerendered page can
+  // never show the build day as today.
+  const [today, setToday] = useState<string | null>(null);
+  const [step, setStep] = useState<Step>("form");
+  const [date, setDate] = useState("");
+  const [driver, setDriver] = useState("");
+  const [vehicle, setVehicle] = useState("");
+  const [odometer, setOdometer] = useState("");
+  const [zones, setZones] = useState<ZoneState>(freshZones);
+  const [notes, setNotes] = useState("");
+  const [incidentOn, setIncidentOn] = useState(false);
+  const [incidentTime, setIncidentTime] = useState("");
+  const [incidentType, setIncidentType] = useState<Incident["type"] | "">("");
+  const [incidentText, setIncidentText] = useState("");
+  const [photos, setPhotos] = useState<Partial<Record<ViewId, Photo>>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [sendMode, setSendMode] = useState<SendMode>(null);
+  const [weekSent, setWeekSent] = useState(false);
+  const [backupFailed, setBackupFailed] = useState(false);
+  const [compressing, setCompressing] = useState(false);
+  const [sentVersion, setSentVersion] = useState(0);
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    const t = toISODate();
+    setToday(t);
+    setDate(defaultDay(t));
+    const id = loadIdentity();
+    setDriver(id.driver);
+    setVehicle(id.vehicle);
+  }, []);
+
+  const weekOf = date ? mondayOf(date) : "";
+  const weekLabel = weekOf ? format(weekOf, { month: "short", day: "numeric" }) : "";
+
+  const sent = useMemo(() => {
+    if (!weekOf || !driver.trim() || !vehicle.trim()) return new Set<string>();
+    return sentDates({ weekOf, driverName: driver.trim(), vehicleId: vehicle.trim() });
+    // sentVersion bumps after a send so the strip picks up the new ✓
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekOf, driver, vehicle, sentVersion]);
+
+  const flaggedCount = ZONES.filter((z) => zones[z.id].status === "attention").length;
+
+  function setZone(id: ZoneId, patch: Partial<ZoneState[ZoneId]>) {
+    setZones((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  }
+
+  async function addPhoto(view: ViewId, files: FileList | null) {
+    const file = files?.[0];
+    if (!file) return;
+    setError(null);
+    setCompressing(true);
+    try {
+      const { blob, sizeBytes } = await compressPhoto(file);
+      const previewUrl = URL.createObjectURL(blob);
+      setPhotos((prev) => {
+        const old = prev[view];
+        if (old) URL.revokeObjectURL(old.previewUrl);
+        return { ...prev, [view]: { fileName: `${view}.jpg`, sizeBytes, blob, previewUrl } };
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not compress photo.");
+    } finally {
+      setCompressing(false);
+    }
+  }
+
+  function removePhoto(view: ViewId) {
+    setPhotos((prev) => {
+      const old = prev[view];
+      if (!old) return prev;
+      URL.revokeObjectURL(old.previewUrl);
+      const next = { ...prev };
+      delete next[view];
+      return next;
+    });
+  }
+
+  async function sendWeek(id: { weekOf: string; driverName: string; vehicleId: string }) {
+    const days = loadEmailedDays(id);
+    if (days.length === 0) {
+      setError("No emailed days saved on this phone for that week yet.");
+      return false;
+    }
+    const body = new FormData();
+    body.set("payload", JSON.stringify({ mode: "week", ...id, days }));
+    const res = await fetch("/api/submit", { method: "POST", body });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      setError(json.error || "Week report failed. Try Resend week report.");
+      return false;
+    }
+    if (json.data?.mode) setSendMode(json.data.mode);
+    return true;
+  }
+
+  function continueToPhotos() {
+    setError(null);
+    if (!driver.trim() || !vehicle.trim() || !date || !odometer) {
+      setError("Fill in driver, vehicle, and odometer before continuing.");
+      return;
+    }
+    if (today && date > today) {
+      setError("Pick today or a day already worked.");
+      return;
+    }
+    const odo = Number(odometer);
+    if (!Number.isFinite(odo) || odo < 0 || !Number.isInteger(odo)) {
+      setError("Odometer must be a whole number.");
+      return;
+    }
+    if (incidentOn && (!incidentTime.trim() || !incidentType || !incidentText.trim())) {
+      setError("Incident needs time, type, and description — or switch it off.");
+      return;
+    }
+    saveIdentity(driver.trim(), vehicle.trim());
+    setStep("photos");
+    window.scrollTo({ top: 0 });
+  }
+
+  function resendWeek() {
+    setError(null);
+    if (!driver.trim() || !vehicle.trim() || !weekOf) {
+      setError("Enter driver and vehicle first, then resend the week.");
+      return;
+    }
+    startTransition(async () => {
+      try {
+        setStatus("Sending week rollup…");
+        const ok = await sendWeek({ weekOf, driverName: driver.trim(), vehicleId: vehicle.trim() });
+        setStatus(null);
+        if (ok) {
+          setWeekSent(true);
+          setStep("success");
+        }
+      } catch {
+        setError("Network error while sending week report.");
+        setStatus(null);
+      }
+    });
+  }
+
+  function sendInspection() {
+    setError(null);
+    const missing = VIEWS.filter((v) => !photos[v.id]);
+    if (missing.length > 0) {
+      const names = missing.map((v) => v.label.toLowerCase());
+      setError(names.length === 1 ? `Add the ${names[0]} photo.` : `Add photos for the ${joinList(names)}.`);
+      return;
+    }
+    const shots = VIEWS.map((v) => photos[v.id]!);
+
+    startTransition(async () => {
+      try {
+        setStatus("Sending daily inspection…");
+        setWeekSent(false);
+        const report = {
+          driverName: driver.trim(),
+          vehicleId: vehicle.trim(),
+          weekOf,
+          date,
+          odometer: Number(odometer),
+          damageNotes: notes.trim() || undefined,
+          zones: Object.fromEntries(
+            ZONES.map((z) => [z.id, { status: zones[z.id].status, note: zones[z.id].note.trim() || undefined }]),
+          ),
+          incident:
+            incidentOn && incidentType
+              ? { time: incidentTime.trim(), type: incidentType, description: incidentText.trim() }
+              : undefined,
+        };
+        const body = new FormData();
+        body.set("payload", JSON.stringify(report));
+        for (const p of shots) body.append("photos", new File([p.blob], p.fileName, { type: "image/jpeg" }));
+
+        const res = await fetch("/api/submit", { method: "POST", body });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+          setError(json.error || "Send failed. Try again.");
+          setStatus(null);
+          return;
+        }
+        setSendMode(json.data?.mode ?? null);
+
+        try {
+          saveDay(
+            { weekOf, driverName: report.driverName, vehicleId: report.vehicleId },
+            {
+              date,
+              odometer: report.odometer,
+              zones: report.zones,
+              damageNotes: report.damageNotes,
+              incident: report.incident,
+              photoCount: shots.length,
+              emailed: true,
+            },
+          );
+          setBackupFailed(false);
+        } catch {
+          setBackupFailed(true);
+        }
+        setSentVersion((v) => v + 1);
+
+        if (isFriday(date)) {
+          setStatus("Sending week rollup…");
+          setWeekSent(await sendWeek({ weekOf, driverName: report.driverName, vehicleId: report.vehicleId }));
+        }
+        setStatus(null);
+        setStep("success");
+        window.scrollTo({ top: 0 });
+      } catch {
+        setError("Network error while sending. Try again.");
+        setStatus(null);
+      }
+    });
+  }
+
+  function startAnother() {
+    for (const p of Object.values(photos)) if (p) URL.revokeObjectURL(p.previewUrl);
+    const t = toISODate();
+    setToday(t);
+    setPhotos({});
+    setZones(freshZones());
+    setOdometer("");
+    setNotes("");
+    setDate(defaultDay(t));
+    setIncidentOn(false);
+    setIncidentTime("");
+    setIncidentType("");
+    setIncidentText("");
+    setSendMode(null);
+    setWeekSent(false);
+    setBackupFailed(false);
+    setError(null);
+    setStep("form");
+    window.scrollTo({ top: 0 });
+  }
+
+  const header = (
+    <SiteHeader>
+      {weekLabel ? <span className="nav-meta">Week of {weekLabel}</span> : null}
+    </SiteHeader>
+  );
+
+  if (!today) {
+    return (
+      <main>
+        {header}
+        <div className="shell loading-shell" aria-busy="true" />
+      </main>
+    );
+  }
+
+  if (step === "success") {
+    return (
+      <main>
+        {header}
+        <div className="shell">
+          <div className="success-panel">
+            <div className="success-mark" aria-hidden="true">
+              ✓
+            </div>
+            <h1>{weekSent ? "Day and week sent" : "Inspection sent"}</h1>
+            <p>
+              {format(date, { weekday: "long", month: "long", day: "numeric" })} — your daily checklist
+              {weekSent ? " and week rollup were" : " was"} emailed
+              {sendMode === "mock" ? " (test mode — email is not configured)" : ""}.
+              {backupFailed
+                ? " The week backup could not be saved on this phone."
+                : " A copy is saved on this phone for the week report."}
+            </p>
+            <div className="actions-row">
+              <Link className="btn btn-accent btn-xl" href="/">
+                Done
+              </Link>
+              <button type="button" className="btn btn-ghost btn-xl" onClick={startAnother}>
+                Start another
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const photoCount = VIEWS.filter((v) => photos[v.id]).length;
+  const photoBytes = VIEWS.reduce((n, v) => n + (photos[v.id]?.sizeBytes ?? 0), 0);
+
+  return (
+    <main>
+      {header}
+      <div className="shell">
+        <nav className="stage-rail" aria-label="Inspection stages">
+          <div className={`stage-rail-item${step === "photos" ? " is-done" : ""}`} aria-current={step === "form" ? "step" : undefined}>
+            <span className="stage-num">01</span>
+            <span className="stage-label">Inspect</span>
+          </div>
+          <div className="stage-rail-item" aria-current={step === "photos" ? "step" : undefined}>
+            <span className="stage-num">02</span>
+            <span className="stage-label">Photos</span>
+          </div>
+          <div className="stage-rail-item">
+            <span className="stage-num">03</span>
+            <span className="stage-label">Sent</span>
+          </div>
+        </nav>
+
+        {step === "form" ? (
+          <>
+            <header className="page-head">
+              <h1>Vehicle checklist</h1>
+              <p>Pick the day, walk the truck, send it to the shop. Friday also sends the week.</p>
+            </header>
+
+            <section className="section" aria-labelledby="day-title">
+              <div className="section-head">
+                <h2 className="section-title" id="day-title">
+                  Which day?
+                </h2>
+              </div>
+              <WeekStrip today={today} selected={date} sent={sent} onSelect={setDate} />
+            </section>
+
+            <section className="section" aria-labelledby="who-title">
+              <div className="section-head">
+                <h2 className="section-title" id="who-title">
+                  Driver &amp; vehicle
+                </h2>
+              </div>
+              <div className="field-grid">
+                <label className="field">
+                  <span>Driver name</span>
+                  <input
+                    value={driver}
+                    onChange={(e) => setDriver(e.target.value)}
+                    placeholder="Alex Rivera"
+                    autoComplete="name"
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Vehicle ID / plate</span>
+                  <input
+                    value={vehicle}
+                    onChange={(e) => setVehicle(e.target.value)}
+                    placeholder="UNIT-12 · ABC-1234"
+                    autoCapitalize="characters"
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>Odometer (miles)</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={odometer}
+                    onChange={(e) => setOdometer(e.target.value)}
+                    placeholder="48210"
+                    min={0}
+                    required
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="section" aria-labelledby="walk-title">
+              <div className="section-head">
+                <h2 className="section-title" id="walk-title">
+                  Walk-around
+                </h2>
+                <p className="section-meta">
+                  {flaggedCount === 0 ? (
+                    "All 11 pass"
+                  ) : (
+                    <span className="flag">
+                      {flaggedCount} need{flaggedCount === 1 ? "s" : ""} attention
+                    </span>
+                  )}
+                </p>
+              </div>
+              <div className="zones">
+                {ZONES.map((z, i) => {
+                  const s = zones[z.id];
+                  const bad = s.status === "attention";
+                  return (
+                    <div key={z.id} className={`zone ${bad ? "is-attention" : "is-pass"}`}>
+                      <div className="zone-head">
+                        <span className="zone-num">{String(i + 1).padStart(2, "0")}</span>
+                        <h3 className="zone-name">{z.label}</h3>
+                        <p className="zone-hint">{z.hint}</p>
+                      </div>
+                      <div className="seg" role="radiogroup" aria-label={z.label}>
+                        <button
+                          type="button"
+                          role="radio"
+                          className="seg-opt"
+                          aria-checked={!bad}
+                          data-value="pass"
+                          onClick={() => setZone(z.id, { status: "pass" })}
+                        >
+                          ✓ Pass
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          className="seg-opt"
+                          aria-checked={bad}
+                          data-value="attention"
+                          onClick={() => setZone(z.id, { status: "attention" })}
+                        >
+                          ! Attention
+                        </button>
+                      </div>
+                      {bad ? (
+                        <label className="field zone-note">
+                          <span>What’s wrong?</span>
+                          <input
+                            value={s.note}
+                            onChange={(e) => setZone(z.id, { note: e.target.value })}
+                            placeholder="Where and what’s wrong"
+                            maxLength={500}
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="section" aria-labelledby="notes-title">
+              <div className="section-head">
+                <h2 className="section-title" id="notes-title">
+                  Notes &amp; incidents
+                </h2>
+              </div>
+              <div className="field-grid">
+                <label className="field span-all">
+                  <span>Damage / maintenance notes</span>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Anything else the shop should know"
+                    rows={4}
+                    maxLength={2000}
+                  />
+                </label>
+                <div className="span-all">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={incidentOn}
+                    className="toggle-row"
+                    onClick={() => setIncidentOn((v) => !v)}
+                  >
+                    <span>
+                      <strong>Record an incident</strong>
+                      <small>Damage, near-miss, or breakdown on this day</small>
+                    </span>
+                    <span className="switch" aria-hidden="true" />
+                  </button>
+                  {incidentOn ? (
+                    <div className="field-grid incident-fields">
+                      <label className="field">
+                        <span>Time</span>
+                        <input type="time" value={incidentTime} onChange={(e) => setIncidentTime(e.target.value)} />
+                      </label>
+                      <label className="field">
+                        <span>Type</span>
+                        <select
+                          value={incidentType}
+                          onChange={(e) => setIncidentType(e.target.value as Incident["type"] | "")}
+                        >
+                          <option value="">Select…</option>
+                          <option value="damage">Damage</option>
+                          <option value="near-miss">Near-miss</option>
+                          <option value="mechanical">Mechanical</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </label>
+                      <label className="field span-all">
+                        <span>Description</span>
+                        <textarea
+                          value={incidentText}
+                          onChange={(e) => setIncidentText(e.target.value)}
+                          rows={3}
+                          placeholder="What happened"
+                          maxLength={2000}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+
+            {error ? (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            ) : null}
+            {status ? <p className="form-status">{status}</p> : null}
+
+            <p className="sticky-hint">
+              Next: four photos — front, back, and both sides.
+              {isFriday(date) ? " Friday sends the week rollup too." : ""}
+            </p>
+            <div className="sticky-bar">
+              <button type="button" className="btn btn-accent btn-block btn-xl" onClick={continueToPhotos}>
+                Continue to photos
+              </button>
+            </div>
+            <div className="after-bar">
+              <button type="button" className="link-btn" onClick={resendWeek} disabled={pending}>
+                {pending ? "Sending…" : "Resend this week’s report"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <header className="page-head">
+              <h1>Proof photos</h1>
+              <p>
+                One photo of each side for {format(date, { weekday: "long", month: "short", day: "numeric" })}. Each is
+                compressed under 500 KB before sending.
+              </p>
+            </header>
+
+            <div className="view-grid">
+              {VIEWS.map((v) => {
+                const p = photos[v.id];
+                return (
+                  <div key={v.id} className="view-slot">
+                    <label className={`dropzone${p ? " has-photo" : ""}`}>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        hidden
+                        disabled={compressing}
+                        onChange={(e) => {
+                          addPhoto(v.id, e.target.files);
+                          e.target.value = "";
+                        }}
+                      />
+                      {p ? (
+                        <img src={p.previewUrl} alt={`${v.label} of vehicle`} />
+                      ) : (
+                        <span className="dropzone-title">{compressing ? "Compressing…" : v.label}</span>
+                      )}
+                      <span className="dropzone-sub">
+                        {p ? `${v.label} · ${formatBytes(p.sizeBytes)}` : "Tap to take photo"}
+                      </span>
+                    </label>
+                    {p ? (
+                      <button type="button" className="photo-remove" onClick={() => removePhoto(v.id)}>
+                        Retake {v.label.toLowerCase()}
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {error ? (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            ) : null}
+            {status ? <p className="form-status">{status}</p> : null}
+
+            <div className="sticky-bar">
+              <p className="sticky-hint">
+                {photoCount} of {VIEWS.length} sides · {formatBytes(photoBytes)} total
+              </p>
+              <div className="actions-row">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xl"
+                  onClick={() => {
+                    setError(null);
+                    setStep("form");
+                  }}
+                  disabled={pending}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-accent btn-xl btn-grow"
+                  onClick={sendInspection}
+                  disabled={pending || compressing}
+                >
+                  {pending ? "Sending…" : "Send inspection"}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
