@@ -60,14 +60,16 @@ ${r.days.map(dayBlock).join("")}</div>`;
   return { subject, html };
 }
 
-const DEFAULT_INBOX = "service@ascaofficesolutions.com";
+const DEFAULT_SENDER = "service@ascaofficesolutions.com";
+// Reports go internally to Mario B unless MAIL_TO overrides it.
+const DEFAULT_RECIPIENT = "mariob@ascaofficesolutions.com";
 
 // SMTP2GO logins are plain usernames, not addresses, so only fall back to
 // SMTP_USER when it is an email. The sender must be verified in SMTP2GO.
 function mailFrom(): string {
   if (process.env.MAIL_FROM) return process.env.MAIL_FROM;
   const user = process.env.SMTP_USER ?? "";
-  return user.includes("@") ? user : `ASCA Vehicle Check <${DEFAULT_INBOX}>`;
+  return user.includes("@") ? user : `ASCA Vehicle Check <${DEFAULT_SENDER}>`;
 }
 
 export async function sendMail(
@@ -91,7 +93,7 @@ export async function sendMail(
   });
   await transport.sendMail({
     from: mailFrom(),
-    to: process.env.MAIL_TO || DEFAULT_INBOX,
+    to: process.env.MAIL_TO || DEFAULT_RECIPIENT,
     subject,
     html,
     attachments,

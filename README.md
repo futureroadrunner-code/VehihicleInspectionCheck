@@ -25,7 +25,7 @@ Netlify under **Site configuration → Environment variables**:
 | `SMTP_USER` / `SMTP_PASS` | SMTP login. |
 | `SMTP_SECURE` | `true` for implicit TLS (port 465). |
 | `MAIL_FROM` | From address. Defaults to `SMTP_USER`. |
-| `MAIL_TO` | Shop inbox. Defaults to `service@ascaofficesolutions.com`. |
+| `MAIL_TO` | Who receives reports. Defaults to `mariob@ascaofficesolutions.com`. |
 
 ## Layout
 
