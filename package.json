@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "geist": "^1.4.2",
     "next": "15.5.26",
     "nodemailer": "^7.0.10",
     "react": "^19.1.0",

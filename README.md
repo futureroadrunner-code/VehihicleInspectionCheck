@@ -29,6 +29,7 @@ Netlify under **Site configuration → Environment variables**:
 
 ## Layout
 
+- Theme matches the ASCA Site Survey (Schibsted Grotesk, black ink, red `#e10600` accent, square corners).
 - `app/page.tsx`: landing page
 - `app/check/page.tsx` → `components/checklist-wizard.tsx`: inspect → photos → sent
 - `components/week-strip.tsx`: Mon–Fri day picker (today highlighted, date under each day)

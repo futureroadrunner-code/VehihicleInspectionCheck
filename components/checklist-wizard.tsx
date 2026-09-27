@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { SiteHeader } from "./site-header";
+import { SiteFooter } from "./site-footer";
 import { WeekStrip } from "./week-strip";
 import { VIEWS, ZONES, type ViewId, type ZoneId } from "@/lib/zones";
 import { addDays, format, isFriday, isWeekday, mondayOf, toISODate } from "@/lib/dates";
@@ -293,368 +293,377 @@ export function ChecklistWizard() {
     window.scrollTo({ top: 0 });
   }
 
-  const header = (
-    <SiteHeader>
-      {weekLabel ? <span className="nav-meta">Week of {weekLabel}</span> : null}
-    </SiteHeader>
+  const topline = (
+    <div className="topline">
+      <Link href="/">ASCA · Vehicle Check</Link>
+      {weekLabel ? <span>Week of {weekLabel}</span> : null}
+    </div>
+  );
+
+  const stages = (
+    <ol className="stage-index" aria-label="Check progress">
+      {(["form", "photos", "success"] as Step[]).map((s, i) => {
+        const order = { form: 0, photos: 1, success: 2 }[step];
+        return (
+          <li
+            key={s}
+            className={i === order ? "on" : i < order ? "done" : undefined}
+            aria-current={i === order ? "step" : undefined}
+          >
+            {String(i + 1).padStart(2, "0")} {["Inspect", "Photos", "Sent"][i]}
+          </li>
+        );
+      })}
+    </ol>
+  );
+
+  const messages = (
+    <>
+      {error ? (
+        <p className="sheet-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {status ? <p className="sheet-status">{status}</p> : null}
+    </>
   );
 
   if (!today) {
     return (
-      <main>
-        {header}
-        <div className="shell loading-shell" aria-busy="true" />
-      </main>
+      <div className="page">
+        <main className="doc-wrap" aria-busy="true">
+          {topline}
+        </main>
+      </div>
     );
   }
 
   if (step === "success") {
     return (
-      <main>
-        {header}
-        <div className="shell">
-          <div className="success-panel">
-            <div className="success-mark" aria-hidden="true">
-              ✓
+      <div className="page">
+        <main className="doc-wrap animate-rise">
+          {topline}
+          {stages}
+          <header className="folio-head" style={{ marginTop: "var(--space-xl)" }}>
+            <p className="folio-num">OK</p>
+            <div>
+              <p className="folio-brand">ASCA Office Solutions</p>
+              <h1>{weekSent ? "Day and week sent" : "Inspection sent"}</h1>
+              <p className="folio-lede">
+                {format(date, { weekday: "long", month: "long", day: "numeric" })} — your daily checklist
+                {weekSent ? " and week rollup were" : " was"} emailed
+                {sendMode === "mock" ? " (test mode — email is not configured)" : ""}.
+                {backupFailed
+                  ? " The week backup could not be saved on this phone."
+                  : " A copy is saved on this phone for the week report."}
+              </p>
             </div>
-            <h1>{weekSent ? "Day and week sent" : "Inspection sent"}</h1>
-            <p>
-              {format(date, { weekday: "long", month: "long", day: "numeric" })} — your daily checklist
-              {weekSent ? " and week rollup were" : " was"} emailed
-              {sendMode === "mock" ? " (test mode — email is not configured)" : ""}.
-              {backupFailed
-                ? " The week backup could not be saved on this phone."
-                : " A copy is saved on this phone for the week report."}
-            </p>
-            <div className="actions-row">
-              <Link className="btn btn-accent btn-xl" href="/">
-                Done
-              </Link>
-              <button type="button" className="btn btn-ghost btn-xl" onClick={startAnother}>
-                Start another
-              </button>
-            </div>
+          </header>
+          <hr className="chapter-rule" />
+          <div className="sheet-actions">
+            <button type="button" className="back" onClick={startAnother}>
+              Start another
+            </button>
+            <Link className="next" href="/">
+              Done
+            </Link>
           </div>
-        </div>
-      </main>
+        </main>
+        <SiteFooter />
+      </div>
     );
   }
 
-  const photoCount = VIEWS.filter((v) => photos[v.id]).length;
-  const photoBytes = VIEWS.reduce((n, v) => n + (photos[v.id]?.sizeBytes ?? 0), 0);
+  if (step === "photos") {
+    const photoCount = VIEWS.filter((v) => photos[v.id]).length;
+    const photoBytes = VIEWS.reduce((n, v) => n + (photos[v.id]?.sizeBytes ?? 0), 0);
+    return (
+      <div className="page">
+        <main className="doc-wrap animate-rise">
+          {topline}
+          {stages}
+          <header className="folio-head" style={{ marginTop: "var(--space-xl)" }}>
+            <p className="folio-num">02</p>
+            <div>
+              <p className="folio-brand">ASCA Office Solutions</p>
+              <h1>Proof photos</h1>
+              <p className="folio-lede">
+                One photo of each side for {format(date, { weekday: "long", month: "short", day: "numeric" })}.
+                Each is compressed under 500 KB before sending.
+              </p>
+            </div>
+          </header>
+          <hr className="chapter-rule" />
 
-  return (
-    <main>
-      {header}
-      <div className="shell">
-        <nav className="stage-rail" aria-label="Inspection stages">
-          <div className={`stage-rail-item${step === "photos" ? " is-done" : ""}`} aria-current={step === "form" ? "step" : undefined}>
-            <span className="stage-num">01</span>
-            <span className="stage-label">Inspect</span>
-          </div>
-          <div className="stage-rail-item" aria-current={step === "photos" ? "step" : undefined}>
-            <span className="stage-num">02</span>
-            <span className="stage-label">Photos</span>
-          </div>
-          <div className="stage-rail-item">
-            <span className="stage-num">03</span>
-            <span className="stage-label">Sent</span>
-          </div>
-        </nav>
-
-        {step === "form" ? (
-          <>
-            <header className="page-head">
-              <h1>Vehicle checklist</h1>
-              <p>Pick the day, walk the truck, send it to the shop. Friday also sends the week.</p>
-            </header>
-
-            <section className="section" aria-labelledby="day-title">
-              <div className="section-head">
-                <h2 className="section-title" id="day-title">
-                  Which day?
-                </h2>
-              </div>
-              <WeekStrip today={today} selected={date} sent={sent} onSelect={setDate} />
-            </section>
-
-            <section className="section" aria-labelledby="who-title">
-              <div className="section-head">
-                <h2 className="section-title" id="who-title">
-                  Driver &amp; vehicle
-                </h2>
-              </div>
-              <div className="field-grid">
-                <label className="field">
-                  <span>Driver name</span>
-                  <input
-                    value={driver}
-                    onChange={(e) => setDriver(e.target.value)}
-                    placeholder="Alex Rivera"
-                    autoComplete="name"
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span>Vehicle ID / plate</span>
-                  <input
-                    value={vehicle}
-                    onChange={(e) => setVehicle(e.target.value)}
-                    placeholder="UNIT-12 · ABC-1234"
-                    autoCapitalize="characters"
-                    required
-                  />
-                </label>
-                <label className="field">
-                  <span>Odometer (miles)</span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    value={odometer}
-                    onChange={(e) => setOdometer(e.target.value)}
-                    placeholder="48210"
-                    min={0}
-                    required
-                  />
-                </label>
-              </div>
-            </section>
-
-            <section className="section" aria-labelledby="walk-title">
-              <div className="section-head">
-                <h2 className="section-title" id="walk-title">
-                  Walk-around
-                </h2>
-                <p className="section-meta">
-                  {flaggedCount === 0 ? (
-                    "All 11 pass"
-                  ) : (
-                    <span className="flag">
-                      {flaggedCount} need{flaggedCount === 1 ? "s" : ""} attention
+          <div className="view-grid">
+            {VIEWS.map((v) => {
+              const p = photos[v.id];
+              return (
+                <div key={v.id} className="view-slot">
+                  <label className={`dropzone${p ? " has-photo" : ""}`}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      hidden
+                      disabled={compressing}
+                      onChange={(e) => {
+                        addPhoto(v.id, e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                    {p ? (
+                      <img src={p.previewUrl} alt={`${v.label} of vehicle`} />
+                    ) : (
+                      <span className="dropzone-title">{compressing ? "Compressing…" : v.label}</span>
+                    )}
+                    <span className="dropzone-sub">
+                      {p ? `${v.label} · ${formatBytes(p.sizeBytes)}` : "Tap to take photo"}
                     </span>
-                  )}
-                </p>
-              </div>
-              <div className="zones">
-                {ZONES.map((z, i) => {
-                  const s = zones[z.id];
-                  const bad = s.status === "attention";
-                  return (
-                    <div key={z.id} className={`zone ${bad ? "is-attention" : "is-pass"}`}>
-                      <div className="zone-head">
-                        <span className="zone-num">{String(i + 1).padStart(2, "0")}</span>
-                        <h3 className="zone-name">{z.label}</h3>
-                        <p className="zone-hint">{z.hint}</p>
-                      </div>
-                      <div className="seg" role="radiogroup" aria-label={z.label}>
-                        <button
-                          type="button"
-                          role="radio"
-                          className="seg-opt"
-                          aria-checked={!bad}
-                          data-value="pass"
-                          onClick={() => setZone(z.id, { status: "pass" })}
-                        >
-                          ✓ Pass
-                        </button>
-                        <button
-                          type="button"
-                          role="radio"
-                          className="seg-opt"
-                          aria-checked={bad}
-                          data-value="attention"
-                          onClick={() => setZone(z.id, { status: "attention" })}
-                        >
-                          ! Attention
-                        </button>
-                      </div>
-                      {bad ? (
-                        <label className="field zone-note">
-                          <span>What’s wrong?</span>
-                          <input
-                            value={s.note}
-                            onChange={(e) => setZone(z.id, { note: e.target.value })}
-                            placeholder="Where and what’s wrong"
-                            maxLength={500}
-                          />
-                        </label>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className="section" aria-labelledby="notes-title">
-              <div className="section-head">
-                <h2 className="section-title" id="notes-title">
-                  Notes &amp; incidents
-                </h2>
-              </div>
-              <div className="field-grid">
-                <label className="field span-all">
-                  <span>Damage / maintenance notes</span>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Anything else the shop should know"
-                    rows={4}
-                    maxLength={2000}
-                  />
-                </label>
-                <div className="span-all">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={incidentOn}
-                    className="toggle-row"
-                    onClick={() => setIncidentOn((v) => !v)}
-                  >
-                    <span>
-                      <strong>Record an incident</strong>
-                      <small>Damage, near-miss, or breakdown on this day</small>
-                    </span>
-                    <span className="switch" aria-hidden="true" />
-                  </button>
-                  {incidentOn ? (
-                    <div className="field-grid incident-fields">
-                      <label className="field">
-                        <span>Time</span>
-                        <input type="time" value={incidentTime} onChange={(e) => setIncidentTime(e.target.value)} />
-                      </label>
-                      <label className="field">
-                        <span>Type</span>
-                        <select
-                          value={incidentType}
-                          onChange={(e) => setIncidentType(e.target.value as Incident["type"] | "")}
-                        >
-                          <option value="">Select…</option>
-                          <option value="damage">Damage</option>
-                          <option value="near-miss">Near-miss</option>
-                          <option value="mechanical">Mechanical</option>
-                          <option value="other">Other</option>
-                        </select>
-                      </label>
-                      <label className="field span-all">
-                        <span>Description</span>
-                        <textarea
-                          value={incidentText}
-                          onChange={(e) => setIncidentText(e.target.value)}
-                          rows={3}
-                          placeholder="What happened"
-                          maxLength={2000}
-                        />
-                      </label>
-                    </div>
+                  </label>
+                  {p ? (
+                    <button type="button" className="photo-remove" onClick={() => removePhoto(v.id)}>
+                      Retake {v.label.toLowerCase()}
+                    </button>
                   ) : null}
                 </div>
-              </div>
-            </section>
+              );
+            })}
+          </div>
+          <p className="step-note">
+            {photoCount} of {VIEWS.length} sides · {formatBytes(photoBytes)} total
+          </p>
 
-            {error ? (
-              <p className="form-error" role="alert">
-                {error}
-              </p>
-            ) : null}
-            {status ? <p className="form-status">{status}</p> : null}
+          {messages}
 
-            <p className="sticky-hint">
-              Next: four photos — front, back, and both sides.
-              {isFriday(date) ? " Friday sends the week rollup too." : ""}
-            </p>
-            <div className="sticky-bar">
-              <button type="button" className="btn btn-accent btn-block btn-xl" onClick={continueToPhotos}>
-                Continue to photos
-              </button>
-            </div>
-            <div className="after-bar">
-              <button type="button" className="link-btn" onClick={resendWeek} disabled={pending}>
-                {pending ? "Sending…" : "Resend this week’s report"}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <header className="page-head">
-              <h1>Proof photos</h1>
-              <p>
-                One photo of each side for {format(date, { weekday: "long", month: "short", day: "numeric" })}. Each is
-                compressed under 500 KB before sending.
-              </p>
-            </header>
-
-            <div className="view-grid">
-              {VIEWS.map((v) => {
-                const p = photos[v.id];
-                return (
-                  <div key={v.id} className="view-slot">
-                    <label className={`dropzone${p ? " has-photo" : ""}`}>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        hidden
-                        disabled={compressing}
-                        onChange={(e) => {
-                          addPhoto(v.id, e.target.files);
-                          e.target.value = "";
-                        }}
-                      />
-                      {p ? (
-                        <img src={p.previewUrl} alt={`${v.label} of vehicle`} />
-                      ) : (
-                        <span className="dropzone-title">{compressing ? "Compressing…" : v.label}</span>
-                      )}
-                      <span className="dropzone-sub">
-                        {p ? `${v.label} · ${formatBytes(p.sizeBytes)}` : "Tap to take photo"}
-                      </span>
-                    </label>
-                    {p ? (
-                      <button type="button" className="photo-remove" onClick={() => removePhoto(v.id)}>
-                        Retake {v.label.toLowerCase()}
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-
-            {error ? (
-              <p className="form-error" role="alert">
-                {error}
-              </p>
-            ) : null}
-            {status ? <p className="form-status">{status}</p> : null}
-
-            <div className="sticky-bar">
-              <p className="sticky-hint">
-                {photoCount} of {VIEWS.length} sides · {formatBytes(photoBytes)} total
-              </p>
-              <div className="actions-row">
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xl"
-                  onClick={() => {
-                    setError(null);
-                    setStep("form");
-                  }}
-                  disabled={pending}
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-accent btn-xl btn-grow"
-                  onClick={sendInspection}
-                  disabled={pending || compressing}
-                >
-                  {pending ? "Sending…" : "Send inspection"}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+          <div className="sheet-actions sticky">
+            <button
+              type="button"
+              className="back"
+              onClick={() => {
+                setError(null);
+                setStep("form");
+              }}
+              disabled={pending}
+            >
+              ‹ Back
+            </button>
+            <button type="button" className="next" onClick={sendInspection} disabled={pending || compressing}>
+              {pending ? "Sending…" : "Send ›"}
+            </button>
+          </div>
+        </main>
+        <SiteFooter />
       </div>
-    </main>
+    );
+  }
+
+  return (
+    <div className="page">
+      <main className="doc-wrap animate-rise">
+        {topline}
+        {stages}
+        <p className="fill-legend">
+          <span className="swatch" aria-hidden="true" /> Highlighted boxes are still empty.
+          <span className="req">*</span> = required.
+        </p>
+
+        <header className="folio-head">
+          <p className="folio-num">01</p>
+          <div>
+            <p className="folio-brand">ASCA Office Solutions</p>
+            <h1>Vehicle checklist</h1>
+            <p className="folio-lede">Pick the day, walk the truck, send it to the shop.</p>
+          </div>
+        </header>
+        <hr className="chapter-rule" />
+
+        <h2 className="sub-step" style={{ marginTop: 0 }}>
+          <span>1</span>Which day?
+        </h2>
+        <WeekStrip today={today} selected={date} sent={sent} onSelect={setDate} />
+
+        <h2 className="sub-step">
+          <span>2</span>Driver &amp; vehicle
+        </h2>
+        <div className="field-grid">
+          <label className="field span-6">
+            <span>
+              Driver name <span className="req">*</span>
+            </span>
+            <input
+              value={driver}
+              onChange={(e) => setDriver(e.target.value)}
+              placeholder="Alex Rivera"
+              autoComplete="name"
+              required
+            />
+          </label>
+          <label className="field span-6">
+            <span>
+              Vehicle ID / plate <span className="req">*</span>
+            </span>
+            <input
+              value={vehicle}
+              onChange={(e) => setVehicle(e.target.value)}
+              placeholder="UNIT-12 · ABC-1234"
+              autoCapitalize="characters"
+              required
+            />
+          </label>
+          <label className="field span-6">
+            <span>
+              Odometer <span className="req">*</span>
+            </span>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={odometer}
+              onChange={(e) => setOdometer(e.target.value)}
+              placeholder="48210"
+              min={0}
+              required
+            />
+            <em className="hint">Miles, as shown on the dash</em>
+          </label>
+        </div>
+
+        <h2 className="sub-step">
+          <span>3</span>Walk-around
+          <span className={`aside${flaggedCount ? " flag" : ""}`}>
+            {flaggedCount === 0 ? "All 11 pass" : `${flaggedCount} need${flaggedCount === 1 ? "s" : ""} attention`}
+          </span>
+        </h2>
+        <div className="zones">
+          {ZONES.map((z, i) => {
+            const s = zones[z.id];
+            const bad = s.status === "attention";
+            return (
+              <div key={z.id} className={`zone${bad ? " is-attention" : ""}`}>
+                <div className="zone-head">
+                  <span className="zone-num">{String(i + 1).padStart(2, "0")}</span>
+                  <h3 className="zone-name">{z.label}</h3>
+                  <p className="zone-hint">{z.hint}</p>
+                </div>
+                <div className="seg" role="radiogroup" aria-label={z.label}>
+                  <button
+                    type="button"
+                    role="radio"
+                    className="seg-opt"
+                    aria-checked={!bad}
+                    data-value="pass"
+                    onClick={() => setZone(z.id, { status: "pass" })}
+                  >
+                    Pass
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    className="seg-opt"
+                    aria-checked={bad}
+                    data-value="attention"
+                    onClick={() => setZone(z.id, { status: "attention" })}
+                  >
+                    Attention
+                  </button>
+                </div>
+                {bad ? (
+                  <label className="field">
+                    <span>What’s wrong?</span>
+                    <input
+                      value={s.note}
+                      onChange={(e) => setZone(z.id, { note: e.target.value })}
+                      placeholder="Where and what’s wrong"
+                      maxLength={500}
+                    />
+                  </label>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+
+        <h2 className="sub-step">
+          <span>4</span>Notes &amp; incidents
+        </h2>
+        <div className="field-grid">
+          <label className="field">
+            <span>Damage / maintenance notes</span>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Anything else the shop should know"
+              rows={4}
+              maxLength={2000}
+            />
+            <em className="hint">Optional</em>
+          </label>
+        </div>
+        <div className={`feat${incidentOn ? " open" : ""}`}>
+          <button type="button" aria-expanded={incidentOn} onClick={() => setIncidentOn((v) => !v)}>
+            <span className="feat-sign" aria-hidden="true">
+              {incidentOn ? "−" : "+"}
+            </span>
+            <span>
+              Record an incident
+              <span className="feat-sub">Damage, near-miss, or breakdown on this day</span>
+            </span>
+          </button>
+          <div className="panel">
+            <div className="field-grid">
+              <label className="field span-6">
+                <span>
+                  Time <span className="req">*</span>
+                </span>
+                <input type="time" value={incidentTime} onChange={(e) => setIncidentTime(e.target.value)} />
+              </label>
+              <label className="field span-6">
+                <span>
+                  Type <span className="req">*</span>
+                </span>
+                <select
+                  value={incidentType}
+                  onChange={(e) => setIncidentType(e.target.value as Incident["type"] | "")}
+                >
+                  <option value="">Select…</option>
+                  <option value="damage">Damage</option>
+                  <option value="near-miss">Near-miss</option>
+                  <option value="mechanical">Mechanical</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>
+                  Description <span className="req">*</span>
+                </span>
+                <textarea
+                  value={incidentText}
+                  onChange={(e) => setIncidentText(e.target.value)}
+                  rows={3}
+                  placeholder="What happened"
+                  maxLength={2000}
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {messages}
+
+        <p className="step-note">
+          Next: four photos — front, back, and both sides.
+          {isFriday(date) ? " Friday sends the week rollup too." : ""}
+        </p>
+        <div className="sheet-actions sticky">
+          <button type="button" className="text-link" onClick={resendWeek} disabled={pending}>
+            {pending ? "Sending…" : "Resend week"}
+          </button>
+          <button type="button" className="next" onClick={continueToPhotos}>
+            Continue ›
+          </button>
+        </div>
+      </main>
+      <SiteFooter />
+    </div>
   );
 }
