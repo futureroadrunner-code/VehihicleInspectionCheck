@@ -67,9 +67,19 @@ const DEFAULT_RECIPIENT = "mariob@ascaofficesolutions.com";
 // SMTP2GO logins are plain usernames, not addresses, so only fall back to
 // SMTP_USER when it is an email. The sender must be verified in SMTP2GO.
 function mailFrom(): string {
-  if (process.env.MAIL_FROM) return process.env.MAIL_FROM;
+  // Keep whichever sender the site already has configured, under any of
+  // the common variable names.
+  const configured =
+    process.env.MAIL_FROM || process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.FROM_EMAIL;
+  if (configured) return configured;
   const user = process.env.SMTP_USER ?? "";
   return user.includes("@") ? user : `ASCA Vehicle Check <${DEFAULT_SENDER}>`;
+}
+
+export class EmailNotConfiguredError extends Error {
+  constructor() {
+    super("SMTP_HOST is not set");
+  }
 }
 
 export async function sendMail(
@@ -79,6 +89,11 @@ export async function sendMail(
 ): Promise<SendMode> {
   const host = process.env.SMTP_HOST;
   if (!host) {
+    // Pretending to send on the live site would silently lose reports, so
+    // mock mode is local-only unless explicitly allowed.
+    if (process.env.NODE_ENV === "production" && process.env.ALLOW_MOCK_EMAIL !== "true") {
+      throw new EmailNotConfiguredError();
+    }
     console.info("[fleetcheck] SMTP_HOST not set — mock send:", subject);
     return "mock";
   }

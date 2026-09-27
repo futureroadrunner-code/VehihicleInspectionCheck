@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { dailySchema, weekSchema } from "@/lib/schema";
-import { dailyEmail, sendMail, weekEmail, type Attachment } from "@/lib/email";
+import { EmailNotConfiguredError, dailyEmail, sendMail, weekEmail, type Attachment } from "@/lib/email";
 
 export const runtime = "nodejs";
 
@@ -58,6 +58,10 @@ export async function POST(req: Request) {
     const mode = await sendMail(subject, html, attachments);
     return NextResponse.json({ success: true, data: { mode } });
   } catch (err) {
+    if (err instanceof EmailNotConfiguredError) {
+      console.error("[fleetcheck] SMTP_HOST missing in production");
+      return fail("Email isn’t set up on the server yet, so this report was NOT sent. Tell the office.", 503);
+    }
     console.error("[fleetcheck] send failed", err);
     return fail("Email could not be sent. Try again in a minute.", 502);
   }

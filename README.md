@@ -10,8 +10,11 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-Without SMTP settings the API runs in **mock mode**. It validates the
-report and logs it, but sends no email, and the success screen says "test mode".
+Without SMTP settings the API runs in **mock mode** during local
+development. It validates the report and logs it, but sends no email, and
+the success screen says "test mode". In production a missing `SMTP_HOST` is
+an error instead, so reports are never silently dropped. Set
+`ALLOW_MOCK_EMAIL=true` to allow mock mode on a preview deploy.
 
 ## Email settings
 
