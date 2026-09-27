@@ -60,6 +60,16 @@ ${r.days.map(dayBlock).join("")}</div>`;
   return { subject, html };
 }
 
+const DEFAULT_INBOX = "service@ascaofficesolutions.com";
+
+// SMTP2GO logins are plain usernames, not addresses, so only fall back to
+// SMTP_USER when it is an email. The sender must be verified in SMTP2GO.
+function mailFrom(): string {
+  if (process.env.MAIL_FROM) return process.env.MAIL_FROM;
+  const user = process.env.SMTP_USER ?? "";
+  return user.includes("@") ? user : `ASCA Vehicle Check <${DEFAULT_INBOX}>`;
+}
+
 export async function sendMail(
   subject: string,
   html: string,
@@ -80,8 +90,8 @@ export async function sendMail(
       : undefined,
   });
   await transport.sendMail({
-    from: process.env.MAIL_FROM || process.env.SMTP_USER,
-    to: process.env.MAIL_TO || "service@ascaofficesolutions.com",
+    from: mailFrom(),
+    to: process.env.MAIL_TO || DEFAULT_INBOX,
     subject,
     html,
     attachments,
