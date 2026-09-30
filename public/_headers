@@ -1,0 +1,12 @@
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  Service-Worker-Allowed: /
+
+/
+  Cache-Control: no-cache
+
+/check
+  Cache-Control: no-cache
+
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable

@@ -29,6 +29,7 @@ export const weekSchema = z.object({
   vehicleId: z.string().trim().min(1).max(80),
   part: z.number().int().min(1).max(10),
   parts: z.number().int().min(1).max(10),
+  fileName: z.string().max(200),
   days: z.array(reportDaySchema).min(1).max(7),
 });
 

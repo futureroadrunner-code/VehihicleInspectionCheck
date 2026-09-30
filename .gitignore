@@ -6,4 +6,6 @@ next-env.d.ts
 .env
 .env.local
 .netlify/
-mock-mail/
+out/
+.wrangler/
+.dev.vars

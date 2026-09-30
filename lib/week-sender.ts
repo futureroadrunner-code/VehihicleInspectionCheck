@@ -22,10 +22,22 @@ export function weekIsDue(weekOf: string, days: StoredDay[], today: string): boo
   return workweek(weekOf).every((d) => saved.has(d));
 }
 
-async function post(body: FormData): Promise<"sent" | "mock"> {
+/** Base64 via the browser's native encoder (fast even for a few MB). */
+function toBase64(bytes: Uint8Array): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",", 2)[1] ?? "");
+    reader.onerror = () => reject(reader.error ?? new Error("Could not prepare the week’s .zip file."));
+    reader.readAsDataURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/zip" }));
+  });
+}
+
+async function post(head: object, zip: Uint8Array): Promise<"sent" | "mock"> {
+  // One line of JSON, a newline, then the .zip as base64 (see worker/index.ts).
+  const body = `${JSON.stringify(head)}\n${await toBase64(zip)}`;
   let res: Response;
   try {
-    res = await fetch("/api/submit", { method: "POST", body });
+    res = await fetch("/api/submit", { method: "POST", headers: { "Content-Type": "text/plain" }, body });
   } catch {
     throw new Error("No connection. The week is saved on this phone and will send when you’re back online.");
   }
@@ -55,13 +67,15 @@ async function doSendWeek(weekOf: string): Promise<SendResult> {
   const parts = await buildWeekParts(meta, unsent);
 
   for (const [i, part] of parts.entries()) {
-    const body = new FormData();
-    body.set(
-      "payload",
-      JSON.stringify({ mode: "week", ...meta, part: i + 1, parts: parts.length, days: part.days.map(toReportDay) }),
-    );
-    body.set("archive", new File([part.zip as Uint8Array<ArrayBuffer>], part.fileName, { type: "application/zip" }));
-    result.mode = await post(body);
+    const head = {
+      mode: "week",
+      ...meta,
+      part: i + 1,
+      parts: parts.length,
+      fileName: part.fileName,
+      days: part.days.map(toReportDay),
+    };
+    result.mode = await post(head, part.zip);
     result.emails++;
     // Mark sent right away so a later failure never re-sends these days.
     // Their photos are now in the office inbox, so free the space on the phone.

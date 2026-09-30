@@ -3,9 +3,6 @@ import { Schibsted_Grotesk } from "next/font/google";
 import "./globals.css";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 
-// Render per request so Firebase Hosting's CDN never serves a stale page after a deploy.
-export const dynamic = "force-dynamic";
-
 // Same face as the ASCA Site Survey.
 const sans = Schibsted_Grotesk({
   variable: "--font-sans-face",

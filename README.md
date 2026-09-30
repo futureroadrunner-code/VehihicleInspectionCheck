@@ -1,9 +1,10 @@
 # ASCA Vehicle Check
 
 Daily vehicle inspection for ASCA technicians, installable as a phone app (PWA).
-It runs on the same setup as DaVision: **Cloud Run + Firebase Hosting** in the
-`davision-f9a1e` Google project, emailing the office through the **same
-Microsoft 365 settings** (app registration + office mailbox).
+It runs on **Cloudflare** (a Worker serving the static app plus one
+`/api/submit` endpoint) and emails the office through the **same Microsoft 365
+settings as DaVision** (app registration + office mailbox). SMTP2GO's web API
+also works as an alternative.
 
 ## How the week works
 
@@ -27,40 +28,46 @@ The tech can also tap **Send week now** to send early. Phones don't let web
 apps wake up on a schedule, so sending happens whenever the app is in use.
 Installing it to the home screen keeps saved weeks from being cleared.
 
-## Deploy
+## Deploy (Cloudflare)
 
-From **Google Cloud Shell** (shell.cloud.google.com, signed in with the account
-that manages DaVision):
+1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Import a
+   repository** → GitHub → `VehihicleInspectionCheck`.
+   - Branch: `claude/zen-planck-7xs2bq` (or `main` once merged)
+   - Build command: `npm run build`
+   - Deploy command: `npx wrangler deploy`
+2. After the first deploy: the project → **Settings → Variables and Secrets →
+   Add**, then redeploy:
 
-```bash
-git clone -b claude/zen-planck-7xs2bq https://github.com/futureroadrunner-code/VehihicleInspectionCheck
-cd VehihicleInspectionCheck
-./scripts/deploy.sh
-```
+   | Type | Name | Value |
+   |---|---|---|
+   | Text | `M365_TENANT_ID` | same as DaVision |
+   | Text | `M365_CLIENT_ID` | same as DaVision |
+   | **Secret** | `M365_CLIENT_SECRET` | same as DaVision |
+   | Text | `MAIL_FROM` | same as DaVision (the office mailbox) |
+   | Text | `MAIL_TO` | `mariob@ascaofficesolutions.com` |
 
-The script:
-1. copies `M365_TENANT_ID`, `M365_CLIENT_ID`, `M365_CLIENT_SECRET` and
-   `MAIL_FROM` from DaVision's Cloud Run service (`asca-vision`), without
-   printing them;
-2. builds and deploys the Cloud Run service `asca-vehicle-check`;
-3. creates the Firebase Hosting site `asca-vehicle-check` (first run only) and
-   publishes **https://asca-vehicle-check.web.app**.
+   DaVision's values are in Google Cloud Console → Cloud Run → `asca-vision`
+   → **Edit & deploy new revision → Variables & Secrets**.
+   To use SMTP2GO instead, add a **Secret** `SMTP2GO_API_KEY` (and a
+   `MAIL_FROM` verified in SMTP2GO); it takes priority over Microsoft 365.
 
-Reports go to `mariob@ascaofficesolutions.com`. To change that, run
-`MAIL_TO=someone@ascaofficesolutions.com ./scripts/deploy.sh`.
+`wrangler.jsonc` sets `keep_vars`, so deploys never wipe these settings.
+Each weekly send uses about 5 ms of Worker CPU, which fits the free plan's
+10 ms. If the logs ever show "exceeded CPU", the $5/month Workers plan
+removes that limit.
 
 ## Run locally
 
 ```bash
 npm install
-npm run dev        # http://localhost:3000
-npm test           # Microsoft 365 sender tests
+npm run dev        # pages only, http://localhost:3000
+npm run preview    # full app in Cloudflare's local runtime, incl. /api/submit
+npm test           # email sender tests (Microsoft 365 + SMTP2GO)
 ```
 
-Without the M365 settings, local runs **mock-send**: the email is logged, and
-with `MOCK_MAIL_DIR` set it's saved with its .zip. In production, missing
-settings are an error ("this week was NOT sent"), so no week is silently
-dropped.
+For `npm run preview`, put `ALLOW_MOCK_EMAIL=true` in `.dev.vars` to log
+emails instead of sending them. On the live site, missing email settings are
+an error ("this week was NOT sent"), so no week is silently dropped.
 
 ## Layout
 
@@ -70,7 +77,7 @@ dropped.
 - `lib/week-sender.ts`: when a week is due; sends it, never twice
 - `lib/week-package.ts`: builds the week's .zip on the phone
 - `lib/report-html.ts`: report layout shared by the email and the .zip
-- `lib/email.ts`: Microsoft 365 (Graph) sender, same as DaVision's `server/taskMail.ts`
-- `app/api/submit/route.ts`: receives a week and emails it
+- `lib/email.ts`: Microsoft 365 (Graph) sender, same as DaVision's `server/taskMail.ts`, or SMTP2GO
+- `worker/index.ts`: Cloudflare Worker: serves `out/` and handles `/api/submit`
 - `app/manifest.ts`, `public/sw.js`, `public/icon-*.png`: installable app
-- `Dockerfile`, `firebase.json`, `scripts/deploy.sh`: Cloud Run + Firebase Hosting
+- `wrangler.jsonc`, `public/_headers`: Cloudflare config
