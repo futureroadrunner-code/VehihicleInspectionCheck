@@ -63,6 +63,13 @@ async function submit(req: Request, env: Env): Promise<Response> {
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname === "/api/status") {
+      // Which email service is set up. Never returns any setting values.
+      const m365 = ["M365_TENANT_ID", "M365_CLIENT_ID", "M365_CLIENT_SECRET", "MAIL_FROM"];
+      const missing = m365.filter((k) => !env[k]);
+      const email = env.SMTP2GO_API_KEY ? "smtp2go" : missing.length === 0 ? "microsoft365" : "not configured";
+      return json({ email, ...(email === "not configured" ? { missing } : {}), mailToSet: Boolean(env.MAIL_TO) });
+    }
     if (url.pathname === "/api/submit") {
       if (req.method !== "POST") return fail("Method not allowed.", 405);
       return submit(req, env);

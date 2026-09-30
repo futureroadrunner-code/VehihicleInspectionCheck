@@ -1,7 +1,7 @@
 {
   // Cloudflare Worker: serves the static app from out/ and runs /api/submit.
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "asca-vehicle-check",
+  "name": "vehihicleinspectioncheck",
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-01",
   "assets": {
