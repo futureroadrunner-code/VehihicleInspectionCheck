@@ -13,25 +13,13 @@ export const incidentSchema = z.object({
   description: z.string().trim().min(1).max(2000),
 });
 
-export const dailySchema = z.object({
-  driverName: z.string().trim().min(1).max(120),
-  vehicleId: z.string().trim().min(1).max(80),
-  weekOf: isoDate,
+export const reportDaySchema = z.object({
   date: isoDate,
-  odometer: z.coerce.number().int().min(0).max(9_999_999),
-  zones: z.record(z.string(), zoneResultSchema),
-  damageNotes: z.string().max(2000).optional(),
-  incident: incidentSchema.optional(),
-});
-
-export const savedDaySchema = z.object({
-  date: isoDate,
-  odometer: z.number().int().min(0),
+  odometer: z.number().int().min(0).max(9_999_999),
   zones: z.record(z.string(), zoneResultSchema),
   damageNotes: z.string().max(2000).optional(),
   incident: incidentSchema.optional(),
   photoCount: z.number().int().min(0).max(8),
-  emailed: z.boolean(),
 });
 
 export const weekSchema = z.object({
@@ -39,11 +27,11 @@ export const weekSchema = z.object({
   weekOf: isoDate,
   driverName: z.string().trim().min(1).max(120),
   vehicleId: z.string().trim().min(1).max(80),
-  days: z.array(savedDaySchema).min(1).max(7),
+  part: z.number().int().min(1).max(10),
+  parts: z.number().int().min(1).max(10),
+  days: z.array(reportDaySchema).min(1).max(7),
 });
 
 export type ZoneResult = z.infer<typeof zoneResultSchema>;
 export type Incident = z.infer<typeof incidentSchema>;
-export type DailyReport = z.infer<typeof dailySchema>;
-export type SavedDay = z.infer<typeof savedDaySchema>;
 export type WeekReport = z.infer<typeof weekSchema>;

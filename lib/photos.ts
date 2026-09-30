@@ -1,10 +1,13 @@
-export const MAX_PHOTO_BYTES = 500_000;
+// Twenty photos (5 days × 4 sides) must fit in one Microsoft 365 email,
+// which caps a message with attachments at about 4 MB.
+export const MAX_PHOTO_BYTES = 120_000;
 
 const PASSES = [
-  { maxEdge: 1600, quality: 0.7 },
-  { maxEdge: 1280, quality: 0.55 },
+  { maxEdge: 1280, quality: 0.6 },
+  { maxEdge: 1100, quality: 0.5 },
   { maxEdge: 960, quality: 0.45 },
-  { maxEdge: 800, quality: 0.35 },
+  { maxEdge: 800, quality: 0.4 },
+  { maxEdge: 640, quality: 0.35 },
 ];
 
 export function formatBytes(n: number): string {

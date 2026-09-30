@@ -6,20 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "next": "15.5.26",
-    "nodemailer": "^7.0.10",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@netlify/plugin-nextjs": "^5.16.0",
     "@types/node": "^22",
-    "@types/nodemailer": "^7.0.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "typescript": "^5.9.3"

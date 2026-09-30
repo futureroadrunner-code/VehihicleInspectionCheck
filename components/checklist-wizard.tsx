@@ -7,7 +7,7 @@ import { WeekStrip, type DayStatus } from "./week-strip";
 import { VIEWS, ZONES, type ViewId, type ZoneId } from "@/lib/zones";
 import { addDays, format, isWeekday, mondayOf, toISODate } from "@/lib/dates";
 import { compressPhoto, formatBytes } from "@/lib/photos";
-import { daysInWeek, getDay, getWeek, putDay, putWeek, requestPersistence, type StoredDay } from "@/lib/local-db";
+import { daysInWeek, getDay, putDay, requestPersistence, type StoredDay } from "@/lib/local-db";
 import { dueWeeks, fridayOf, sendWeek, weekIsDue } from "@/lib/week-sender";
 import type { Incident } from "@/lib/schema";
 
@@ -286,8 +286,6 @@ export function ChecklistWizard() {
 
     try {
       await putDay(day);
-      // A day added after the summary went out means the summary is stale.
-      if ((await getWeek(weekOf))?.summarySentAt) await putWeek({ weekOf });
     } catch {
       setBusy(null);
       setError("Could not save on this phone. Check that the phone isn’t out of storage, then try again.");

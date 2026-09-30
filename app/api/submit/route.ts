@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { dailySchema, weekSchema } from "@/lib/schema";
-import { EmailNotConfiguredError, dailyEmail, sendMail, weekEmail, type Attachment } from "@/lib/email";
+import { weekSchema } from "@/lib/schema";
+import { EmailNotConfiguredError, sendOfficeEmail } from "@/lib/email";
+import { failedZones, weekBodyHtml } from "@/lib/report-html";
+import { format } from "@/lib/dates";
 
 export const runtime = "nodejs";
 
-const MAX_PHOTOS = 8;
-// Client compresses to 500 KB; allow a little slack for multipart overhead.
-const MAX_PHOTO_BYTES = 600_000;
+// Microsoft 365 caps a sendMail request at ~4 MB; the phone keeps each .zip under 2.7 MB.
+const MAX_ARCHIVE_BYTES = 2_900_000;
 
 function fail(error: string, status = 400) {
   return NextResponse.json({ success: false, error }, { status });
@@ -28,41 +29,37 @@ export async function POST(req: Request) {
   } catch {
     return fail("Payload is not valid JSON.");
   }
+  const parsed = weekSchema.safeParse(payload);
+  if (!parsed.success) return fail("Week report is incomplete.");
+  const week = parsed.data;
+
+  const archive = form.get("archive");
+  if (!(archive instanceof File)) return fail("The week’s .zip file is missing.");
+  if (archive.size > MAX_ARCHIVE_BYTES) return fail("The week’s photos are too large to email. Retake the largest photos.");
+
+  const failedDays = week.days.filter((d) => failedZones(d.zones).length > 0 || d.incident).length;
+  const partNote = week.parts > 1 ? ` · part ${week.part} of ${week.parts}` : "";
+  const subject =
+    `Vehicle check · ${week.vehicleId} · week of ${format(week.weekOf, { month: "short", day: "numeric" })} · ${week.driverName}` +
+    ` · ${week.days.length} day${week.days.length === 1 ? "" : "s"}` +
+    (failedDays ? ` · ${failedDays} with issues` : " · all pass") +
+    partNote;
 
   try {
-    if ((payload as { mode?: unknown })?.mode === "week") {
-      const parsed = weekSchema.safeParse(payload);
-      if (!parsed.success) return fail("Week report is incomplete.");
-      const { subject, html } = weekEmail(parsed.data);
-      const mode = await sendMail(subject, html);
-      return NextResponse.json({ success: true, data: { mode } });
-    }
-
-    const parsed = dailySchema.safeParse(payload);
-    if (!parsed.success) return fail("Checklist is incomplete. Check driver, vehicle, date, and odometer.");
-
-    const photos = form.getAll("photos").filter((p): p is File => p instanceof File);
-    if (photos.length > MAX_PHOTOS) return fail(`At most ${MAX_PHOTOS} photos.`);
-    const attachments: Attachment[] = [];
-    for (const p of photos) {
-      if (!p.type.startsWith("image/")) return fail("Photos must be images.");
-      if (p.size > MAX_PHOTO_BYTES) return fail("A photo is too large. Retake it and try again.");
-      attachments.push({
-        filename: p.name || "photo.jpg",
-        content: Buffer.from(await p.arrayBuffer()),
-        contentType: p.type,
-      });
-    }
-
-    const { subject, html } = dailyEmail(parsed.data, attachments.length);
-    const mode = await sendMail(subject, html, attachments);
+    const mode = await sendOfficeEmail({
+      subject,
+      html: weekBodyHtml(week, partNote),
+      attachments: [
+        { name: archive.name || "vehicle-check.zip", contentType: "application/zip", content: new Uint8Array(await archive.arrayBuffer()) },
+      ],
+    });
     return NextResponse.json({ success: true, data: { mode } });
   } catch (err) {
     if (err instanceof EmailNotConfiguredError) {
-      console.error("[fleetcheck] SMTP_HOST missing in production");
-      return fail("Email isn’t set up on the server yet, so this report was NOT sent. Tell the office.", 503);
+      console.error("[vehicle-check] M365 email settings missing in production");
+      return fail("Email isn’t set up on the server yet, so this week was NOT sent. It’s still saved on the phone. Tell the office.", 503);
     }
-    console.error("[fleetcheck] send failed", err);
-    return fail("Email could not be sent. Try again in a minute.", 502);
+    console.error("[vehicle-check] send failed", err);
+    return fail("The office email could not be sent. The week is still saved on the phone — try again later.", 502);
   }
 }

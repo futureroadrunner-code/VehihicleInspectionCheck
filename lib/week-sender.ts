@@ -1,9 +1,10 @@
 "use client";
 
 import { addDays, isWeekday, workweek } from "./dates";
-import { allDays, daysInWeek, getWeek, putDay, putWeek, type StoredDay } from "./local-db";
+import { allDays, daysInWeek, putDay, type StoredDay } from "./local-db";
+import { buildWeekParts, toReportDay } from "./week-package";
 
-export type SendResult = { weekOf: string; daysSent: number; mode: "smtp" | "mock" | null };
+export type SendResult = { weekOf: string; daysSent: number; emails: number; mode: "sent" | "mock" | null };
 
 /** Friday of the week that starts on `weekOf`. */
 export const fridayOf = (weekOf: string) => addDays(weekOf, 4);
@@ -21,7 +22,7 @@ export function weekIsDue(weekOf: string, days: StoredDay[], today: string): boo
   return workweek(weekOf).every((d) => saved.has(d));
 }
 
-async function post(body: FormData): Promise<"smtp" | "mock"> {
+async function post(body: FormData): Promise<"sent" | "mock"> {
   let res: Response;
   try {
     res = await fetch("/api/submit", { method: "POST", body });
@@ -30,12 +31,12 @@ async function post(body: FormData): Promise<"smtp" | "mock"> {
   }
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json.success) throw new Error(json.error || "The office email could not be sent. Try again.");
-  return json.data?.mode ?? "smtp";
+  return json.data?.mode ?? "sent";
 }
 
 const inFlight = new Map<string, Promise<SendResult>>();
 
-/** Send every unsent day of the week (with photos), then the week summary. */
+/** Zip every unsent day of the week (reports + photos) and email it to the office. */
 export function sendWeek(weekOf: string): Promise<SendResult> {
   const running = inFlight.get(weekOf);
   if (running) return running;
@@ -45,75 +46,41 @@ export function sendWeek(weekOf: string): Promise<SendResult> {
 }
 
 async function doSendWeek(weekOf: string): Promise<SendResult> {
-  const days = await daysInWeek(weekOf);
-  let daysSent = 0;
-  let mode: SendResult["mode"] = null;
+  const unsent = (await daysInWeek(weekOf)).filter((d) => !d.sentAt);
+  const result: SendResult = { weekOf, daysSent: 0, emails: 0, mode: null };
+  if (unsent.length === 0) return result;
 
-  for (const day of days) {
-    if (day.sentAt) continue;
+  const latest = unsent[unsent.length - 1];
+  const meta = { weekOf, driverName: latest.driverName, vehicleId: latest.vehicleId };
+  const parts = await buildWeekParts(meta, unsent);
+
+  for (const [i, part] of parts.entries()) {
     const body = new FormData();
     body.set(
       "payload",
-      JSON.stringify({
-        driverName: day.driverName,
-        vehicleId: day.vehicleId,
-        weekOf: day.weekOf,
-        date: day.date,
-        odometer: day.odometer,
-        zones: day.zones,
-        damageNotes: day.damageNotes,
-        incident: day.incident,
-      }),
+      JSON.stringify({ mode: "week", ...meta, part: i + 1, parts: parts.length, days: part.days.map(toReportDay) }),
     );
-    for (const p of day.photos) body.append("photos", new File([p.blob], `${day.date}-${p.view}.jpg`, { type: "image/jpeg" }));
-    mode = await post(body);
-    // Mark sent right away so a later failure never re-sends this day.
-    // Photos are already in the office inbox, so free the space on the phone.
-    await putDay({ ...day, sentAt: new Date().toISOString(), photos: [] });
-    daysSent++;
+    body.set("archive", new File([part.zip as Uint8Array<ArrayBuffer>], part.fileName, { type: "application/zip" }));
+    result.mode = await post(body);
+    result.emails++;
+    // Mark sent right away so a later failure never re-sends these days.
+    // Their photos are now in the office inbox, so free the space on the phone.
+    const sentAt = new Date().toISOString();
+    for (const d of part.days) await putDay({ ...d, sentAt, photos: [] });
+    result.daysSent += part.days.length;
   }
-
-  const week = await getWeek(weekOf);
-  if (days.length > 0 && !week?.summarySentAt) {
-    const latest = days[days.length - 1];
-    const body = new FormData();
-    body.set(
-      "payload",
-      JSON.stringify({
-        mode: "week",
-        weekOf,
-        driverName: latest.driverName,
-        vehicleId: latest.vehicleId,
-        days: days.map((d) => ({
-          date: d.date,
-          odometer: d.odometer,
-          zones: d.zones,
-          damageNotes: d.damageNotes,
-          incident: d.incident,
-          photoCount: d.photoCount,
-          emailed: true,
-        })),
-      }),
-    );
-    mode = await post(body);
-    await putWeek({ weekOf, summarySentAt: new Date().toISOString() });
-  }
-
-  return { weekOf, daysSent, mode };
+  return result;
 }
 
-/** Weeks that are finished but still have something to send. */
+/** Weeks that are finished but still have unsent days. */
 export async function dueWeeks(today: string): Promise<string[]> {
   const byWeek = new Map<string, StoredDay[]>();
   for (const d of await allDays()) {
     if (!isWeekday(d.date)) continue;
     byWeek.set(d.weekOf, [...(byWeek.get(d.weekOf) ?? []), d]);
   }
-  const due: string[] = [];
-  for (const [weekOf, days] of byWeek) {
-    if (!weekIsDue(weekOf, days, today)) continue;
-    const week = await getWeek(weekOf);
-    if (days.some((d) => !d.sentAt) || !week?.summarySentAt) due.push(weekOf);
-  }
-  return due.sort();
+  return [...byWeek]
+    .filter(([weekOf, days]) => weekIsDue(weekOf, days, today) && days.some((d) => !d.sentAt))
+    .map(([weekOf]) => weekOf)
+    .sort();
 }

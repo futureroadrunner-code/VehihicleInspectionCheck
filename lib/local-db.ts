@@ -24,12 +24,6 @@ export type StoredDay = {
   sentAt?: string;
 };
 
-export type StoredWeek = {
-  weekOf: string;
-  /** Set once the week summary email went out (after all days sent). */
-  summarySentAt?: string;
-};
-
 const DB_NAME = "fleetcheck";
 const DB_VERSION = 1;
 const DAYS = "days";
@@ -87,14 +81,6 @@ export function daysInWeek(weekOf: string): Promise<StoredDay[]> {
 
 export function allDays(): Promise<StoredDay[]> {
   return run<StoredDay[]>(DAYS, "readonly", (s) => s.getAll());
-}
-
-export function getWeek(weekOf: string): Promise<StoredWeek | undefined> {
-  return run<StoredWeek | undefined>(WEEKS, "readonly", (s) => s.get(weekOf));
-}
-
-export async function putWeek(week: StoredWeek): Promise<void> {
-  await run(WEEKS, "readwrite", (s) => s.put(week));
 }
 
 /** Ask the browser not to clear our data when the phone runs low on space. */
