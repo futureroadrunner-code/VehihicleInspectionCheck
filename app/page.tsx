@@ -2,7 +2,7 @@ import Link from "next/link";
 import { SiteFooter } from "@/components/site-footer";
 import { ZONES } from "@/lib/zones";
 
-const STEPS = ["Pick the day", "Driver & vehicle", "Walk-around", "Proof photos", "Send to the shop"];
+const STEPS = ["Pick the day", "Driver & vehicle", "Walk-around — pass or fail", "Proof photos", "Save on this phone"];
 
 export default function Home() {
   return (
@@ -14,7 +14,8 @@ export default function Home() {
             <p className="folio-brand">ASCA Office Solutions</p>
             <h1>Vehicle Check</h1>
             <p className="folio-lede">
-              Walk the truck each day and email the shop. Friday sends the full week from this phone.
+              Walk the truck each day and save it on this phone. After Friday the whole week — every day and every
+              photo — goes to the office together.
             </p>
           </div>
         </header>
@@ -30,12 +31,18 @@ export default function Home() {
         </ol>
 
         <div className="sheet-actions">
-          <span className="meta">About five minutes</span>
+          <span className="meta">About five minutes a day</span>
           <Link className="next" href="/check">
             Begin
           </Link>
         </div>
 
+        <hr className="chapter-rule" />
+        <p className="index-label">Install it</p>
+        <p className="folio-lede" style={{ marginBottom: "var(--space-lg)" }}>
+          Add Vehicle Check to your home screen so your saved week is kept safe and the app opens without signal.
+          iPhone: Share → Add to Home Screen. Android: menu → Install app.
+        </p>
         <hr className="chapter-rule" />
         <p className="index-label">What gets checked</p>
         <ol className="folio-index">

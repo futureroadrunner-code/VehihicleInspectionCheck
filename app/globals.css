@@ -608,9 +608,60 @@ ul {
   box-shadow: inset 0 4px 0 var(--color-accent);
 }
 
-.day.is-sent:not(.is-today) .day-tag {
+.day.is-sent:not(.is-today) .day-tag,
+.day.is-saved:not(.is-today) .day-tag {
   border: 1px solid currentColor;
   line-height: calc(1.15rem - 2px);
+}
+
+.day.is-saved:not(.is-today):not([aria-pressed="true"]) .day-tag {
+  background: var(--color-empty);
+  border-color: var(--color-empty-edge);
+}
+
+/* Today that is already saved/sent: small corner marker */
+.day-dot {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.45rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--color-empty-edge);
+}
+
+.day-dot[data-status="sent"] {
+  background: currentColor;
+}
+
+.week-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-md);
+  margin-top: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-ink);
+  font-size: 0.92rem;
+}
+
+.notice {
+  margin: 0 0 var(--space-lg);
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--color-ink);
+  background: var(--color-paper-2);
+  font-size: 0.92rem;
+}
+
+.notice-ok {
+  box-shadow: inset 4px 0 0 var(--color-ink);
+}
+
+.notice-warn {
+  border-color: var(--color-accent);
+  box-shadow: inset 4px 0 0 var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
 }
 
 .week-selected {

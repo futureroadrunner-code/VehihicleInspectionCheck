@@ -23,7 +23,7 @@ function zoneRows(zones: Record<string, ZoneResult>): string {
     const r = zones[z.id];
     const bad = r?.status === "attention";
     const status = bad
-      ? `<strong style="color:#b4531b">ATTENTION</strong>${r?.note ? ` — ${esc(r.note)}` : ""}`
+      ? `<strong style="color:#e10600">FAIL</strong>${r?.note ? ` — ${esc(r.note)}` : ""}`
       : `<span style="color:#1d6b3a">Pass</span>`;
     return `<tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid #e5e7eb">${esc(z.label)}</td><td style="padding:6px 0;border-bottom:1px solid #e5e7eb">${status}</td></tr>`;
   }).join("");
@@ -41,7 +41,7 @@ function dayBlock(day: Pick<SavedDay, "date" | "odometer" | "zones" | "damageNot
 
 export function dailyEmail(r: DailyReport, photoCount: number) {
   const bad = flagged(r.zones);
-  const subject = `FleetCheck · ${r.vehicleId} · ${r.date} · ${r.driverName}${bad.length ? ` · ${bad.length} need attention` : " · all pass"}${r.incident ? " · INCIDENT" : ""}`;
+  const subject = `FleetCheck · ${r.vehicleId} · ${r.date} · ${r.driverName}${bad.length ? ` · ${bad.length} failed` : " · all pass"}${r.incident ? " · INCIDENT" : ""}`;
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111">
 <h2 style="margin:0 0 4px">Daily vehicle check</h2>
 <p style="margin:0 0 16px;color:#555">${esc(r.driverName)} · ${esc(r.vehicleId)} · week of ${esc(r.weekOf)}</p>

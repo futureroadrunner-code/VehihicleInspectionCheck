@@ -2,14 +2,16 @@
 
 import { addDays, format, fromISODate, isWeekday, mondayOf, workweek } from "@/lib/dates";
 
+export type DayStatus = "saved" | "sent";
+
 type Props = {
   today: string;
   selected: string;
-  sent: Set<string>;
+  status: Map<string, DayStatus>;
   onSelect: (iso: string) => void;
 };
 
-export function WeekStrip({ today, selected, sent, onSelect }: Props) {
+export function WeekStrip({ today, selected, status, onSelect }: Props) {
   const monday = mondayOf(selected);
   const days = workweek(monday);
   const isCurrentWeek = monday === mondayOf(today);
@@ -21,9 +23,11 @@ export function WeekStrip({ today, selected, sent, onSelect }: Props) {
   }
 
   const selectedIsToday = selected === today;
+  const sameYear = fromISODate(monday).getFullYear() === fromISODate(today).getFullYear();
   const weekLabel = isCurrentWeek
     ? `This week · ${format(monday, { month: "short", day: "numeric" })}`
-    : `Week of ${format(monday, { month: "short", day: "numeric", year: fromISODate(monday).getFullYear() === fromISODate(today).getFullYear() ? undefined : "numeric" })}`;
+    : `Week of ${format(monday, { month: "short", day: "numeric", year: sameYear ? undefined : "numeric" })}`;
+  const selectedStatus = status.get(selected);
 
   return (
     <div className="week">
@@ -48,23 +52,24 @@ export function WeekStrip({ today, selected, sent, onSelect }: Props) {
       <div className="week-days" role="group" aria-label="Inspection day">
         {days.map((iso) => {
           const isToday = iso === today;
-          const isFuture = iso > today;
-          const isSent = sent.has(iso);
-          const cls = ["day", isToday && "is-today", isSent && "is-sent"].filter(Boolean).join(" ");
+          const s = status.get(iso);
+          const cls = ["day", isToday && "is-today", s && `is-${s}`].filter(Boolean).join(" ");
           const full = format(iso, { weekday: "long", month: "long", day: "numeric" });
+          const tag = isToday ? "Today" : s === "sent" ? "✓ Sent" : s === "saved" ? "Saved" : "";
           return (
             <button
               key={iso}
               type="button"
               className={cls}
               aria-pressed={iso === selected}
-              aria-label={`${full}${isToday ? ", today" : ""}${isSent ? ", already sent" : ""}`}
-              disabled={isFuture}
+              aria-label={`${full}${isToday ? ", today" : ""}${s ? `, ${s}` : ""}`}
+              disabled={iso > today}
               onClick={() => onSelect(iso)}
             >
               <span className="day-name">{format(iso, { weekday: "short" })}</span>
               <span className="day-num">{fromISODate(iso).getDate()}</span>
-              <span className="day-tag">{isToday ? "Today" : isSent ? "✓ Sent" : ""}</span>
+              <span className="day-tag">{tag}</span>
+              {isToday && s ? <span className="day-dot" aria-hidden="true" data-status={s} /> : null}
             </button>
           );
         })}
@@ -72,15 +77,12 @@ export function WeekStrip({ today, selected, sent, onSelect }: Props) {
 
       <div className="week-selected">
         <strong>{format(selected, { weekday: "long", month: "long", day: "numeric" })}</strong>
-        {selectedIsToday ? (
-          <span className="is-today-note">Checking today</span>
-        ) : (
-          <span>
-            Earlier day
-            {sent.has(selected) ? " · already sent once" : ""}
-            {isCurrentWeek && !isWeekday(today) ? ` · today is ${format(today, { weekday: "long" })}` : ""}
-          </span>
-        )}
+        <span className={selectedIsToday ? "is-today-note" : undefined}>
+          {selectedIsToday ? "Checking today" : "Earlier day"}
+          {selectedStatus === "saved" ? " · saved on this phone" : ""}
+          {selectedStatus === "sent" ? " · sent to the office" : ""}
+          {isCurrentWeek && !isWeekday(today) && !selectedIsToday ? ` · today is ${format(today, { weekday: "long" })}` : ""}
+        </span>
       </div>
       <p className="week-legend" aria-hidden="true">
         <span>
